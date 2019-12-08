@@ -22,7 +22,7 @@ class LanguageModeler(nn.Module):
         # embeds = torch.flatten(embeds,start_dim=1)
         # (3) hidden layer
         hidden_layer = self.fc(embeds)
-        activation = F.tanh(hidden_layer)
+        activation = torch.tanh(hidden_layer)
 
         # (4) output layer --> it's probability of label (ner or pos).
         out = self.out(activation)
