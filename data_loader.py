@@ -35,7 +35,7 @@ def read_data(path: str) -> List[str]:
 
 
 def main():
-    train_data, labels = read_data(path=r"C:\Users\kofma\Desktop\datascience\deep\rachel_vova\ex2\ner\train")
+    train_data, labels = read_data(path=r"/home/vova/PycharmProjects/Deep_Exe2/Ass2DL/data/ner/train")
     # we should tokenize the input, but we will ignore that for now
     # build a list of tuples.  Each tuple is ([ word_i-2, word_i-1 ], target word)
 
@@ -46,25 +46,28 @@ def main():
     condlist = [arr_labels == 'LOC', arr_labels == 'PER', arr_labels == 'O', arr_labels == 'ORG', arr_labels == 'MISC']
     choicelist = [0, 1, 2, 3, 4]
     labels = np.select(condlist, choicelist)
-    print(labels)
+    # print(labels)
     # maybe add double __START__ in the begining of the corpus and __END__ in the end,
     #convert all numbers to __NUMBERS__, maybe in the test we doesn't have vocab words must
     #to add to vocab __UNKNOW__
     trigrams = [([train_data[i], train_data[i + 1], train_data[i + 2]],labels[i + 1])
                 for i in range(len(train_data) - 2)]
-    print(trigrams[:3])
+    # print(trigrams[:3])
 
     vocab = set(train_data)
     word_to_ix = {word: i for i, word in enumerate(vocab)}
 
     losses = []
-    loss_function = nn.NLLLoss()
+    loss_function = nn.CrossEntropyLoss()
     model = LanguageModeler(len(vocab), EMBEDDING_DIM, hidden_layer=64, num_of_labels=len(set(labels)), context_size = CONTEXT_SIZE)
     optimizer = optim.SGD(model.parameters(), lr=0.001)
 
     for epoch in range(10):
         total_loss = 0
-        for context, target in trigrams:
+        for i, data in enumerate(trigrams):
+            print(i)
+            context, target = data
+
             # Step 1. Prepare the inputs to be passed to the model (i.e, turn the words
             # into integer indices and wrap them in tensors)
             context_idxs = torch.tensor([word_to_ix[w] for w in context], dtype=torch.long)
@@ -80,8 +83,8 @@ def main():
 
             # Step 4. Compute your loss function. (Again, Torch wants the target
             # word wrapped in a tensor)
-            loss = loss_function(log_probs, torch.tensor([word_to_ix[target]], dtype=torch.long))
-
+            batch_tags = torch.LongTensor([target])
+            loss = loss_function(log_probs, batch_tags)
             # Step 5. Do the backward pass and update the gradient
             loss.backward()
             optimizer.step()
@@ -90,6 +93,7 @@ def main():
             total_loss += loss.item()
         losses.append(total_loss)
     print(losses)  # The loss decreased every iteration over the training data!
+
 
 if __name__ == "__main__":
     main()
