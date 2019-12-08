@@ -251,10 +251,13 @@ def train_epoch(contexts, model, loss_function, optimizer, device):
         # Get relevant tensors and move to GPU
         batch_contexts = batch[0]
         batch_tags = batch[1]
+
         batch_contexts = torch.LongTensor(batch_contexts)
         batch_tags = torch.LongTensor(batch_tags)
+
         batch_contexts = batch_contexts.to(device)
         batch_tags = batch_tags.to(device)
+
         # Get prediction from the model
         model.zero_grad()
         probs = model(batch_contexts)
