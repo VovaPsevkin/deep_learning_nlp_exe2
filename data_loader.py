@@ -1,13 +1,28 @@
 import torch
-import torch.nn as nn
-import torch.optim as optim
-from typing import List
-import re
+from torch.utils.data import DataLoader
+from torch.utils.data import Dataset
 import numpy as np
-from cleopatra import LanguageModeler
+import re
 
-def read_data(path: str) -> List[str]:
-    """Read data from csv file, split into two groups (word, ner)
+class CustomDataset(Dataset):
+    def __init__(self, data_root):
+        # we should tokenize the input, but we will ignore that for now
+        # build a list of tuples.  Each tuple is ([ word_i-2, word_i-1 ], target word)
+        self.data, self.labels, transform_word2num, self.vocab = self.read_data(path=data_root)
+        unk = ['__PADDING__'] * 2
+        self.data = unk + self.data + unk
+
+        self.mapping = list(map(transform_word2num.get, self.data))
+        self.samples = [[self.mapping[i - 2], self.mapping[i - 1], self.mapping[i],
+                         self.mapping[i + 1], self.mapping[i + 2]]
+                        for i in range(2, len(self.mapping) - 2)]
+
+    def __len__(self):
+        return len(self.samples)
+
+    @staticmethod
+    def read_data(path):
+        """Read data from csv file, split into two groups (word, ner)
         Args:
         -----
           path: str, address of file.
@@ -16,84 +31,45 @@ def read_data(path: str) -> List[str]:
         --------
           dict: dictionary of words as keys and part of speech as value
 
-    """
-    l_words = []
-    l_ner = []
+        """
+        l_words = []
+        l_labels = []
 
-    with open(path) as file:
-        for i, line in enumerate(file):
-            try:
-                pairs = line.split('\t')
-                word, ner = pairs[0], re.sub(r'\W', '', pairs[1])
-                l_words.append(word), l_ner.append(ner)
-            except IndexError:
-                pass
-            # vocab = set(test_sentence)
-            # word_to_ix = {word: i for i, word in enumerate(vocab)}
-    return (l_words, l_ner)
+        with open(path) as file:
+            for i, line in enumerate(file):
+                try:
+                    pairs = line.split('\t')
+                    word, ner = pairs[0], re.sub(r'\W', '', pairs[1])
+                    l_words.append(word), l_labels.append(ner)
+                except IndexError:
+                    pass
 
+        arr_labels = np.array(l_labels)
+        condlist = [arr_labels == 'LOC', arr_labels == 'PER',
+                    arr_labels == 'O', arr_labels == 'ORG', arr_labels == 'MISC']
+        choicelist = [0, 1, 2, 3, 4]
+        labels = np.select(condlist, choicelist)
 
+        vocab = set(l_words)
+        word_to_num = {word: i for i, word in enumerate(vocab, 2)}
+        word_to_num['__PADDING__'] = 0
+        return (l_words, labels, word_to_num, vocab)
 
-def main():
-    train_data, labels = read_data(path=r"/home/vova/PycharmProjects/Deep_Exe2/Ass2DL/data/ner/train")
-    # we should tokenize the input, but we will ignore that for now
-    # build a list of tuples.  Each tuple is ([ word_i-2, word_i-1 ], target word)
+    def __getitem__(self, idx):
+        # maybe add double __START__ in the begining of the corpus and __END__ in the end,
+        # convert all numbers to __NUMBERS__, maybe in the test we doesn't have vocab words must
+        # to add to vocab __UNKNOW__
+        label = torch.tensor(self.labels[idx], dtype=torch.long)
+        sample = torch.tensor(self.samples[idx])
 
-    CONTEXT_SIZE = 3
-    EMBEDDING_DIM = 10
-
-    arr_labels = np.array(labels)
-    condlist = [arr_labels == 'LOC', arr_labels == 'PER', arr_labels == 'O', arr_labels == 'ORG', arr_labels == 'MISC']
-    choicelist = [0, 1, 2, 3, 4]
-    labels = np.select(condlist, choicelist)
-    # print(labels)
-    # maybe add double __START__ in the begining of the corpus and __END__ in the end,
-    #convert all numbers to __NUMBERS__, maybe in the test we doesn't have vocab words must
-    #to add to vocab __UNKNOW__
-    trigrams = [([train_data[i], train_data[i + 1], train_data[i + 2]],labels[i + 1])
-                for i in range(len(train_data) - 2)]
-    # print(trigrams[:3])
-
-    vocab = set(train_data)
-    word_to_ix = {word: i for i, word in enumerate(vocab)}
-
-    losses = []
-    loss_function = nn.CrossEntropyLoss()
-    model = LanguageModeler(len(vocab), EMBEDDING_DIM, hidden_layer=64, num_of_labels=len(set(labels)), context_size = CONTEXT_SIZE)
-    optimizer = optim.SGD(model.parameters(), lr=0.001)
-
-    for epoch in range(10):
-        total_loss = 0
-        for i, data in enumerate(trigrams):
-            print(i)
-            context, target = data
-
-            # Step 1. Prepare the inputs to be passed to the model (i.e, turn the words
-            # into integer indices and wrap them in tensors)
-            context_idxs = torch.tensor([word_to_ix[w] for w in context], dtype=torch.long)
-
-            # Step 2. Recall that torch *accumulates* gradients. Before passing in a
-            # new instance, you need to zero out the gradients from the old
-            # instance
-            model.zero_grad()
-
-            # Step 3. Run the forward pass, getting log probabilities over next
-            # words
-            log_probs = model(context_idxs)
-
-            # Step 4. Compute your loss function. (Again, Torch wants the target
-            # word wrapped in a tensor)
-            batch_tags = torch.LongTensor([target])
-            loss = loss_function(log_probs, batch_tags)
-            # Step 5. Do the backward pass and update the gradient
-            loss.backward()
-            optimizer.step()
-
-            # Get the Python number from a 1-element Tensor by calling tensor.item()
-            total_loss += loss.item()
-        losses.append(total_loss)
-    print(losses)  # The loss decreased every iteration over the training data!
+        return sample, label
 
 
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    dataset = CustomDataset(
+        data_root=r"/home/vova/PycharmProjects/Deep_Exe2/Ass2DL/data/ner/train")
+    dataloader = DataLoader(dataset, batch_size=50, shuffle=True, num_workers=2)
+    for i, batch in enumerate(dataloader):
+        print(i, batch)
+
+
